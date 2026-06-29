@@ -12,6 +12,20 @@ app = FastAPI(title="RepoLens")
 
 GITHUB_HOST = "github.com"
 CLONE_TIMEOUT_SECONDS = 60
+SKIP_DIRS = {
+    ".git",
+    "venv",
+    ".venv",
+    "env",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "build",
+    "dist",
+    ".eggs",
+}
 
 
 class ValidateRepoRequest(BaseModel):
@@ -92,6 +106,23 @@ def parse_github_url(url: str) -> ParsedRepo:
 
 def count_files(directory: str) -> int:
     return sum(len(files) for _, _, files in os.walk(directory))
+
+
+def scan_python_files(repo_path: str) -> list[str]:
+    python_files: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(repo_path):
+        # os.walk only prunes recursion when dirnames is mutated in place;
+        # rebinding (dirnames = [...]) leaves the original list unchanged.
+        kept_dirs: list[str] = []
+        for d in dirnames:
+            if d not in SKIP_DIRS:
+                kept_dirs.append(d)
+        dirnames[:] = kept_dirs
+        for filename in filenames:
+            if filename.endswith(".py"):
+                full_path = os.path.join(dirpath, filename)
+                python_files.append(os.path.relpath(full_path, repo_path))
+    return python_files
 
 
 def clone_failure_reason(stderr: str) -> str:
