@@ -42,6 +42,7 @@ class ParsedRepo:
     owner: str | None = None
     repo: str | None = None
     reason: str | None = None
+    canonical_url: str | None = None
 
 
 @dataclass
@@ -82,7 +83,11 @@ def parse_github_url(url: str) -> ParsedRepo:
     if not owner or not repo_name:
         return ParsedRepo(reason="URL must include both an owner and a repository name")
 
-    return ParsedRepo(owner=owner, repo=repo_name)
+    return ParsedRepo(
+        owner=owner,
+        repo=repo_name,
+        canonical_url=f"https://github.com/{owner}/{repo_name}",
+    )
 
 
 def count_files(directory: str) -> int:
@@ -152,7 +157,7 @@ def validate_repo(request: ValidateRepoRequest) -> ValidateRepoResponse:
         valid=True,
         owner=parsed.owner,
         repo=parsed.repo,
-        canonical_url=f"https://github.com/{parsed.owner}/{parsed.repo}",
+        canonical_url=parsed.canonical_url,
     )
 
 
@@ -162,14 +167,13 @@ def clone_github_repo(request: ValidateRepoRequest) -> CloneRepoResponse:
     if parsed.reason is not None:
         return CloneRepoResponse(success=False, reason=parsed.reason)
 
-    canonical_url = f"https://github.com/{parsed.owner}/{parsed.repo}"
-    result = clone_repo(canonical_url, parsed.owner, parsed.repo)
+    result = clone_repo(parsed.canonical_url, parsed.owner, parsed.repo)
     if result.reason is not None:
         return CloneRepoResponse(
             success=False,
             owner=parsed.owner,
             repo=parsed.repo,
-            canonical_url=canonical_url,
+            canonical_url=parsed.canonical_url,
             reason=result.reason,
         )
 
@@ -180,5 +184,5 @@ def clone_github_repo(request: ValidateRepoRequest) -> CloneRepoResponse:
         commit_sha=result.commit_sha,
         owner=parsed.owner,
         repo=parsed.repo,
-        canonical_url=canonical_url,
+        canonical_url=parsed.canonical_url,
     )
