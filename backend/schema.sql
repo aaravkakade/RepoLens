@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     repo TEXT NOT NULL,
@@ -8,5 +10,6 @@ CREATE TABLE IF NOT EXISTS chunks (
     end_line INTEGER NOT NULL,
     source TEXT NOT NULL,
     parent_class TEXT,
-    docstring TEXT
+    docstring TEXT,
+    embedding vector(384)
 );
