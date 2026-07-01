@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from app.search import search_code
+
 app = FastAPI(title="RepoLens")
 
 GITHUB_HOST = "github.com"
@@ -35,6 +37,29 @@ class CloneRepoResponse(BaseModel):
     repo: str | None = None
     canonical_url: str | None = None
     reason: str | None = None
+
+
+class SearchRequest(BaseModel):
+    repo: str
+    query: str
+    limit: int = 10
+
+
+class SearchResultResponse(BaseModel):
+    file_path: str
+    name: str
+    kind: str
+    start_line: int
+    end_line: int
+    source: str
+    parent_class: str | None = None
+    docstring: str | None = None
+    distance: float
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResultResponse]
+    count: int
 
 
 @dataclass
@@ -185,4 +210,26 @@ def clone_github_repo(request: ValidateRepoRequest) -> CloneRepoResponse:
         owner=parsed.owner,
         repo=parsed.repo,
         canonical_url=parsed.canonical_url,
+    )
+
+
+@app.post("/search", response_model=SearchResponse)
+def search(request: SearchRequest) -> SearchResponse:
+    results = search_code(request.repo, request.query, request.limit)
+    return SearchResponse(
+        results=[
+            SearchResultResponse(
+                file_path=result.file_path,
+                name=result.name,
+                kind=result.kind,
+                start_line=result.start_line,
+                end_line=result.end_line,
+                source=result.source,
+                parent_class=result.parent_class,
+                docstring=result.docstring,
+                distance=result.distance,
+            )
+            for result in results
+        ],
+        count=len(results),
     )
