@@ -6,11 +6,20 @@ import tempfile
 from urllib.parse import urlparse
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.indexer import index_repository
 from app.search import search_code
 
 app = FastAPI(title="RepoLens")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 GITHUB_HOST = "github.com"
 CLONE_TIMEOUT_SECONDS = 60
@@ -60,6 +69,18 @@ class SearchResultResponse(BaseModel):
 class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
     count: int
+
+
+class IndexRequest(BaseModel):
+    url: str
+
+
+class IndexResponse(BaseModel):
+    success: bool
+    repo: str | None = None
+    chunks_indexed: int | None = None
+    files_indexed: int | None = None
+    reason: str | None = None
 
 
 @dataclass
@@ -232,4 +253,29 @@ def search(request: SearchRequest) -> SearchResponse:
             for result in results
         ],
         count=len(results),
+    )
+
+
+@app.post("/index", response_model=IndexResponse)
+def index_repo(request: IndexRequest) -> IndexResponse:
+    parsed = parse_github_url(request.url)
+    if parsed.reason is not None:
+        return IndexResponse(success=False, reason=parsed.reason)
+
+    result = clone_repo(parsed.canonical_url, parsed.owner, parsed.repo)
+    if result.reason is not None:
+        return IndexResponse(success=False, reason=result.reason)
+
+    clone_path = result.path
+    repo_identifier = f"{parsed.owner}/{parsed.repo}"
+    try:
+        summary = index_repository(clone_path, repo_identifier)
+    finally:
+        shutil.rmtree(clone_path, ignore_errors=True)
+
+    return IndexResponse(
+        success=True,
+        repo=repo_identifier,
+        chunks_indexed=summary["chunks_indexed"],
+        files_indexed=summary["files_indexed"],
     )
