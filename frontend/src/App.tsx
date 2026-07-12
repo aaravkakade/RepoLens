@@ -27,6 +27,14 @@ interface SearchResponse {
   count: number
 }
 
+interface AskResponse {
+  success: boolean
+  answer?: string | null
+  sources: SearchResult[]
+  repo?: string | null
+  reason?: string | null
+}
+
 const styles = {
   page: {
     minHeight: '100vh',
@@ -129,6 +137,17 @@ const styles = {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   } as const,
+  answer: {
+    margin: '1rem 0 0',
+    padding: '1rem',
+    background: '#0d1117',
+    border: '1px solid #30363d',
+    borderRadius: '6px',
+    fontSize: '0.95rem',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+  } as const,
 }
 
 function App() {
@@ -141,6 +160,11 @@ function App() {
   const [indexMessage, setIndexMessage] = useState<string | null>(null)
   const [indexError, setIndexError] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [question, setQuestion] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [sources, setSources] = useState<SearchResult[]>([])
+  const [askError, setAskError] = useState<string | null>(null)
 
   const handleIndex = async () => {
     setIndexing(true)
@@ -149,6 +173,9 @@ function App() {
     setRepo(null)
     setResults([])
     setSearchError(null)
+    setAnswer(null)
+    setSources([])
+    setAskError(null)
 
     try {
       const response = await fetch(`${API_BASE}/index`, {
@@ -210,7 +237,45 @@ function App() {
     }
   }
 
+  const handleAsk = async () => {
+    if (!repo) return
+
+    setAsking(true)
+    setAskError(null)
+    setAnswer(null)
+    setSources([])
+
+    try {
+      const response = await fetch(`${API_BASE}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, question, limit: 5 }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`)
+      }
+
+      const data: AskResponse = await response.json()
+
+      if (!data.success) {
+        setAskError(data.reason ?? 'Failed to generate an answer')
+        return
+      }
+
+      setAnswer(data.answer ?? null)
+      setSources(data.sources)
+    } catch (err) {
+      setAskError(
+        err instanceof Error ? err.message : 'Failed to reach the API',
+      )
+    } finally {
+      setAsking(false)
+    }
+  }
+
   const searchDisabled = !repo || searching
+  const askDisabled = !repo || asking
 
   return (
     <div style={styles.page}>
@@ -292,6 +357,70 @@ function App() {
           </p>
         )}
       </section>
+
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Ask</h2>
+        <div style={styles.row}>
+          <input
+            type="text"
+            placeholder="e.g. how does this repo parse command line arguments?"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            disabled={!repo}
+            style={{
+              ...styles.input,
+              ...(!repo ? { opacity: 0.6 } : {}),
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleAsk}
+            disabled={askDisabled || !question.trim()}
+            style={{
+              ...styles.button,
+              ...(askDisabled || !question.trim() ? styles.buttonDisabled : {}),
+            }}
+          >
+            Ask
+          </button>
+        </div>
+        {asking && (
+          <p style={{ ...styles.message, ...styles.loading }}>
+            Generating answer… this may take a few seconds
+          </p>
+        )}
+        {askError && (
+          <p style={{ ...styles.message, ...styles.error }}>{askError}</p>
+        )}
+        {!repo && (
+          <p style={{ ...styles.message, ...styles.loading }}>
+            Index a repository first to ask questions.
+          </p>
+        )}
+        {answer && <div style={styles.answer}>{answer}</div>}
+      </section>
+
+      {sources.length > 0 && (
+        <section>
+          <h2 style={styles.sectionTitle}>
+            Sources ({sources.length})
+          </h2>
+          {sources.map((source, index) => (
+            <article key={`${source.file_path}-${source.name}-${index}`} style={styles.card}>
+              <p style={styles.cardTitle}>
+                <strong>{source.name}</strong>
+              </p>
+              <p style={styles.meta}>
+                {source.kind}
+                {source.parent_class ? ` · in ${source.parent_class}` : ''}
+                {' · '}
+                {source.file_path}:{source.start_line}-{source.end_line}
+              </p>
+              <pre style={styles.pre}>{source.source}</pre>
+            </article>
+          ))}
+        </section>
+      )}
 
       {results.length > 0 && (
         <section>

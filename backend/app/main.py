@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.indexer import index_repository
+from app.rag import OllamaError, answer_question
 from app.search import search_code
 
 app = FastAPI(title="RepoLens")
@@ -69,6 +70,20 @@ class SearchResultResponse(BaseModel):
 class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
     count: int
+
+
+class AskRequest(BaseModel):
+    repo: str
+    question: str
+    limit: int = 5
+
+
+class AskResponse(BaseModel):
+    success: bool
+    answer: str | None = None
+    sources: list[SearchResultResponse] = []
+    repo: str | None = None
+    reason: str | None = None
 
 
 class IndexRequest(BaseModel):
@@ -253,6 +268,34 @@ def search(request: SearchRequest) -> SearchResponse:
             for result in results
         ],
         count=len(results),
+    )
+
+
+@app.post("/ask", response_model=AskResponse)
+def ask(request: AskRequest) -> AskResponse:
+    try:
+        result = answer_question(request.repo, request.question, request.limit)
+    except OllamaError as exc:
+        return AskResponse(success=False, repo=request.repo, reason=str(exc))
+
+    return AskResponse(
+        success=True,
+        answer=result["answer"],
+        sources=[
+            SearchResultResponse(
+                file_path=source.file_path,
+                name=source.name,
+                kind=source.kind,
+                start_line=source.start_line,
+                end_line=source.end_line,
+                source=source.source,
+                parent_class=source.parent_class,
+                docstring=source.docstring,
+                distance=source.distance,
+            )
+            for source in result["sources"]
+        ],
+        repo=result["repo"],
     )
 
 
